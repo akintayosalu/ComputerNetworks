@@ -49,7 +49,6 @@ def WifiTransmitter(*args):
         output = np.concatenate((len_binary, output))
     
     if level >= 2:
-        print(output[2*nfft:])
         coded_message = check.conv_encode(output[2*nfft:].astype(bool), cc1)
         coded_message = coded_message[:-6]
         output = np.concatenate((output[:2*nfft],coded_message))

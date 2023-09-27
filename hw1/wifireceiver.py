@@ -11,8 +11,7 @@ def binary_decode(row):
     else:
         return 0.0
 
-def WifiReceiver(output, level):
-    if level >= 1:
+def de_interleaving(output):
         nfft = 64
         Interleave = np.reshape(np.transpose(np.reshape(np.arange(1, 2*nfft+1, 1),[-1,4])),[-1,])
 
@@ -41,24 +40,6 @@ def WifiReceiver(output, level):
         message_length = len(message)
         begin_zero_padding = 0
         return begin_zero_padding, message, message_length
-
-
-# if __name__ == '__main__':
-#     if len(sys.argv)<2:
-#         raise Exception("Error: Not enough arguments were provided")
-#     elif len(sys.argv)>3:
-#         raise Exception("Error: Too many arguments were provided")
-#     else:
-#         WifiReceiver(sys.argv[1], sys.argv[2])
-
-txsignal = WifiTransmitter("hello world", 2)
-output = txsignal
-nfft = 64
-mod = comm.modulation.QAMModem(4)
-
-
-demodulated_bits = mod.demodulate(output, demod_type='hard')
-encoded_bits = demodulated_bits[4*nfft:] #ignores the preamble and length signals
 
 def hard_viterbi_decoding(encoded_bits):
     #create trellis
@@ -142,25 +123,32 @@ def hard_viterbi_decoding(encoded_bits):
         input_bits.append(transition2input[minTransition])
 
     input_bits = input_bits[::-1]
-    print(input_bits)
-    print(len(input_bits))
+    return input_bits
 
-hard_viterbi_decoding(encoded_bits)
+def WifiReceiver(output, level):
+    transmitted_output = output
+    if level == 1:
+        return de_interleaving(transmitted_output)
+    elif level == 2:
+        nfft = 64
+        mod = comm.modulation.QAMModem(4)
+        demodulated_bits = mod.demodulate(transmitted_output, demod_type='hard')
+        encoded_bits = demodulated_bits[4*nfft:] 
+        length_bits = demodulated_bits[2*nfft:4*nfft]
+        preamble_bits = demodulated_bits[:2*nfft]
+        decoded_bits = hard_viterbi_decoding(encoded_bits)
+        new_output = np.concatenate((length_bits, decoded_bits))
+        return de_interleaving(new_output)
 
 
+# if __name__ == '__main__':
+#     if len(sys.argv)<2:
+#         raise Exception("Error: Not enough arguments were provided")
+#     elif len(sys.argv)>3:
+#         raise Exception("Error: Too many arguments were provided")
+#     else:
+#         WifiReceiver(sys.argv[1], sys.argv[2])
 
-
-
-
-
-
-# cc1 = check.Trellis(np.array([3]),np.array([[0o7,0o5]]))
-# preamble = np.array([1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1,1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1])
-# coded_message = check.conv_encode(output[2*nfft:].astype(bool), cc1)
-# coded_message = coded_message[:-6]
-# print(len(coded_message))
-# output = np.concatenate((output[:2*nfft],coded_message))
-# output = np.concatenate((preamble, output))
-# print(len(output))
-# mod = comm.modulation.QAMModem(4)
-# output = mod.modulate(output.astype(bool))
+txsignal = WifiTransmitter("hello world", 2)
+begin_zero_padding, message, message_length = WifiReceiver(txsignal,2)
+print(begin_zero_padding, message, message_length)
