@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import sys
-#import commpy as comm
-#import commpy.channelcoding.convcode as check
+import commpy as comm
+import commpy.channelcoding.convcode as check
 
 def WifiTransmitter(*args):
     # Default Values
@@ -33,7 +33,7 @@ def WifiTransmitter(*args):
     Interleave = np.reshape(np.transpose(np.reshape(np.arange(1, 2*nfft+1, 1),[-1,4])),[-1,])
     length = len(message)
     preamble = np.array([1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1,1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1])
-    # cc1 = check.Trellis(np.array([3]),np.array([[0o7,0o5]]))
+    cc1 = check.Trellis(np.array([3]),np.array([[0o7,0o5]]))
     if level >= 1:
         bits = np.unpackbits(np.array([ord(c) for c in message], dtype=np.uint8))
         bits = np.pad(bits, (0, 2*nfft-len(bits)%(2*nfft)),'constant')
@@ -49,12 +49,13 @@ def WifiTransmitter(*args):
         output = np.concatenate((len_binary, output))
     
     if level >= 2:
-        # coded_message = check.conv_encode(output[2*nfft:].astype(bool), cc1)
+        print(output[2*nfft:])
+        coded_message = check.conv_encode(output[2*nfft:].astype(bool), cc1)
         coded_message = coded_message[:-6]
         output = np.concatenate((output[:2*nfft],coded_message))
         output = np.concatenate((preamble, output))
-        #mod = comm.modulation.QAMModem(4)
-        #output = mod.modulate(output.astype(bool))
+        mod = comm.modulation.QAMModem(4)
+        output = mod.modulate(output.astype(bool))
         
     if level >= 3:
         nsym = int(len(output)/nfft)
@@ -67,7 +68,7 @@ def WifiTransmitter(*args):
         noise_pad_begin_length = len(noise_pad_begin)
         noise_pad_end = np.zeros(np.random.randint(1,1000))
         output = np.concatenate((noise_pad_begin,output,noise_pad_end))
-        # output = comm.channels.awgn(output,snr)
+        output = comm.channels.awgn(output,snr)
         return noise_pad_begin_length, output, length
             
     return output
