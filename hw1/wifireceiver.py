@@ -125,21 +125,36 @@ def hard_viterbi_decoding(encoded_bits):
     input_bits = input_bits[::-1]
     return input_bits
 
+def demodulated(transmitted_output):
+    nfft = 64
+    mod = comm.modulation.QAMModem(4)
+    demodulated_bits = mod.demodulate(transmitted_output, demod_type='hard')
+    encoded_bits = demodulated_bits[4*nfft:] 
+    length_bits = demodulated_bits[2*nfft:4*nfft]
+    preamble_bits = demodulated_bits[:2*nfft]
+    decoded_bits = hard_viterbi_decoding(encoded_bits)
+    new_output = np.concatenate((length_bits, decoded_bits))
+    return preamble_bits, new_output
+
+def fourier_transform(transmitted_output):
+    nfft = 64
+    nsym = int(len(transmitted_output)/nfft)
+    for i in range(nsym):
+        symbol = transmitted_output[i*nfft:(i+1)*nfft]
+        transmitted_output[i*nfft:(i+1)*nfft] = np.fft.fft(symbol)
+
+    return transmitted_output
+
 def WifiReceiver(output, level):
     transmitted_output = output
     if level == 1:
         return de_interleaving(transmitted_output)
     elif level == 2:
-        nfft = 64
-        mod = comm.modulation.QAMModem(4)
-        demodulated_bits = mod.demodulate(transmitted_output, demod_type='hard')
-        encoded_bits = demodulated_bits[4*nfft:] 
-        length_bits = demodulated_bits[2*nfft:4*nfft]
-        preamble_bits = demodulated_bits[:2*nfft]
-        decoded_bits = hard_viterbi_decoding(encoded_bits)
-        new_output = np.concatenate((length_bits, decoded_bits))
+        preamble, new_output = demodulated(transmitted_output)
+    elif level == 3:
+        transmitted_output = fourier_transform(transmitted_output)
+        preamble, new_output = demodulated(transmitted_output)
         return de_interleaving(new_output)
-
 
 # if __name__ == '__main__':
 #     if len(sys.argv)<2:
@@ -149,6 +164,6 @@ def WifiReceiver(output, level):
 #     else:
 #         WifiReceiver(sys.argv[1], sys.argv[2])
 
-txsignal = WifiTransmitter("hello world", 2)
-begin_zero_padding, message, message_length = WifiReceiver(txsignal,2)
+txsignal = WifiTransmitter("hello world", 3)
+begin_zero_padding, message, message_length = WifiReceiver(txsignal,3)
 print(begin_zero_padding, message, message_length)
