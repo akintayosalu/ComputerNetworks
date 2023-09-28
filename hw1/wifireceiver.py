@@ -76,9 +76,7 @@ def hard_viterbi_decoding(encoded_bits):
                 branch_metric = np.count_nonzero(received_bits!=code_bits)
                 transitionI = 2*stateI + idx
                 branch_metrics[i][transitionI] = branch_metric
-                #print(received_bits,code_bits,branch_metric)
 
-    #print(branch_metrics)
     minHeap = []
     heapq.heapify(minHeap)
     info = []
@@ -87,10 +85,8 @@ def hard_viterbi_decoding(encoded_bits):
         for i in range(num_of_states):
             currentState.append([float('inf'),[i, None,None]]) #node, prev_node,transition
         info.append(currentState)
-    
-    #print(info)
+
     info[0][0][0] = 0
-    # heapq.heappush(minHeap,info[0][0])
     
     for t in range(result_length): #do not need to do calculations for last set of nodes 
         nodeRange = 4
@@ -107,7 +103,7 @@ def hard_viterbi_decoding(encoded_bits):
                 newDist = dist + branch_metrics[t][tr] 
                 if newDist < nextDist:
                     info[nextState][nextNode] = [newDist, [nextNode,node,tr]]
-
+    
     input_bits = []
     #get node with minimum path at the end of trellis           
     idx = result_length
@@ -151,10 +147,38 @@ def WifiReceiver(output, level):
         return de_interleaving(transmitted_output)
     elif level == 2:
         preamble, new_output = demodulated(transmitted_output)
+        return de_interleaving(new_output)
     elif level == 3:
         transmitted_output = fourier_transform(transmitted_output)
         preamble, new_output = demodulated(transmitted_output)
         return de_interleaving(new_output)
+    elif level == 4:
+        nfft = 64
+        preamble = np.array([1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1,1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1])
+        mod = comm.modulation.QAMModem(4)
+        modulated_preamble = mod.modulate(preamble.astype(bool))
+
+        noise_pad_begin_length, snr_output, length = transmitted_output
+        without_zeros_infront = snr_output[noise_pad_begin_length:]
+        transformed_output = fourier_transform(without_zeros_infront)
+       
+        demodulated_bits = mod.demodulate(transformed_output, demod_type='hard')
+        encoded_bits_with_padding = demodulated_bits[4*nfft:] 
+        length_bits = demodulated_bits[2*nfft:4*nfft]
+        preamble_bits = demodulated_bits[:2*nfft]
+        
+        encoded_length = np.reshape(np.trim_zeros(length_bits),[-1,3])
+        decoded_length = np.apply_along_axis(binary_decode, axis=1, arr=encoded_length) #decode length bits
+        length = int(''.join(map(lambda x: str(int(x)), decoded_length)), 2)
+
+        num_of_added_zeros = 2*nfft-(length*8)%(2*nfft)
+        message_bit_size = (length*8) + num_of_added_zeros
+        encoded_bits = encoded_bits_with_padding[:message_bit_size*2]
+        decoded_bits = hard_viterbi_decoding(encoded_bits)
+        new_output = np.concatenate((length_bits, decoded_bits))
+        _, message, message_length = de_interleaving(new_output)
+        
+        return noise_pad_begin_length,message, message_length
 
 # if __name__ == '__main__':
 #     if len(sys.argv)<2:
@@ -164,6 +188,6 @@ def WifiReceiver(output, level):
 #     else:
 #         WifiReceiver(sys.argv[1], sys.argv[2])
 
-txsignal = WifiTransmitter("hello world", 3)
-begin_zero_padding, message, message_length = WifiReceiver(txsignal,3)
+txsignal = WifiTransmitter("hello world", 4)
+begin_zero_padding, message, message_length = WifiReceiver(txsignal,4)
 print(begin_zero_padding, message, message_length)
