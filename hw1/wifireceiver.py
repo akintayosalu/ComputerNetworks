@@ -156,12 +156,11 @@ def WifiReceiver(output, level):
         nfft = 64
         preamble = np.array([1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1,1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1])
         mod = comm.modulation.QAMModem(4)
-        modulated_preamble = mod.modulate(preamble.astype(bool))
+        modulated_preamble = np.fft.ifft(mod.modulate(preamble.astype(bool)))
+        correlation = np.correlate(transmitted_output,modulated_preamble)
+        noise_pad_begin_length = np.argmax(correlation)
 
-        noise_pad_begin_length, snr_output, length = transmitted_output
-        without_zeros_infront = snr_output[noise_pad_begin_length:]
-        transformed_output = fourier_transform(without_zeros_infront)
-       
+        transformed_output = fourier_transform(transmitted_output[noise_pad_begin_length:])
         demodulated_bits = mod.demodulate(transformed_output, demod_type='hard')
         encoded_bits_with_padding = demodulated_bits[4*nfft:] 
         length_bits = demodulated_bits[2*nfft:4*nfft]
@@ -170,7 +169,7 @@ def WifiReceiver(output, level):
         encoded_length = np.reshape(np.trim_zeros(length_bits),[-1,3])
         decoded_length = np.apply_along_axis(binary_decode, axis=1, arr=encoded_length) #decode length bits
         length = int(''.join(map(lambda x: str(int(x)), decoded_length)), 2)
-
+        
         num_of_added_zeros = 2*nfft-(length*8)%(2*nfft)
         message_bit_size = (length*8) + num_of_added_zeros
         encoded_bits = encoded_bits_with_padding[:message_bit_size*2]
@@ -180,14 +179,7 @@ def WifiReceiver(output, level):
         
         return noise_pad_begin_length,message, message_length
 
-# if __name__ == '__main__':
-#     if len(sys.argv)<2:
-#         raise Exception("Error: Not enough arguments were provided")
-#     elif len(sys.argv)>3:
-#         raise Exception("Error: Too many arguments were provided")
-#     else:
-#         WifiReceiver(sys.argv[1], sys.argv[2])
+#noise_pad_begin, txsignal, length = WifiTransmitter("my name is akintayo", 4)
+#begin_zero_padding, message, message_length = WifiReceiver(txsignal,4)
 
-txsignal = WifiTransmitter("hello world", 4)
-begin_zero_padding, message, message_length = WifiReceiver(txsignal,4)
-print(begin_zero_padding, message, message_length)
+#print(begin_zero_padding, message, message_length)
