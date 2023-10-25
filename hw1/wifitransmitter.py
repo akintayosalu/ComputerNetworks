@@ -32,6 +32,7 @@ def WifiTransmitter(*args):
     nfft = 64
     Interleave = np.reshape(np.transpose(np.reshape(np.arange(1, 2*nfft+1, 1),[-1,4])),[-1,])
     length = len(message)
+    print(length)
     preamble = np.array([1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1,1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1])
     cc1 = check.Trellis(np.array([3]),np.array([[0o7,0o5]]))
     if level >= 1:
@@ -45,7 +46,9 @@ def WifiTransmitter(*args):
             
         # repetitive encoding for the length field
         length_encoded = ''.join([b+b+b for b in np.binary_repr(length)])
+        print(length_encoded)
         len_binary = np.array(list(length_encoded.zfill(2*nfft))).astype(np.int8)
+        print(len_binary)
         output = np.concatenate((len_binary, output))
     
     if level >= 2:
@@ -83,3 +86,6 @@ if __name__ == '__main__':
         WifiTransmitter(sys.argv[1], sys.argv[2], sys.argv[3])
     elif len(sys.argv)>=5:
         raise Exception("Error: Number of arguments exceed the maximum arguments allowed (3)")
+        
+
+        

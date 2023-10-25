@@ -17,7 +17,7 @@ def de_interleaving(output):
 
         #Get length of message
         length_binary = output[0:2*nfft]
-        encoded_length = np.reshape(np.trim_zeros(length_binary),[-1,3])
+        encoded_length = np.reshape(np.trim_zeros(length_binary,'f'),[-1,3])
         decoded_length = np.apply_along_axis(binary_decode, axis=1, arr=encoded_length) #decode length bits
         length = int(''.join(map(lambda x: str(int(x)), decoded_length)), 2)
 
@@ -186,3 +186,7 @@ def WifiReceiver(output, level):
         new_output = np.concatenate((length_bits, decoded_bits))
         _, message, message_length = de_interleaving(new_output)
         return noise_pad_begin_length,message, message_length
+
+output = WifiTransmitter("!@#$%^&*()",1)
+noise_pad_begin_length,message, message_length = WifiReceiver(output,1)
+print(noise_pad_begin_length,message, message_length)
