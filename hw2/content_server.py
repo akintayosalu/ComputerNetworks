@@ -75,7 +75,31 @@ def send_ack(msg):
     s.sendto(msg_string.encode(), (server_address, int(server_port)))
     s.close()
 
+def return_uuid():
+    output = str({"uuid":node_info["uuid"]})
+    print(ast.literal_eval(output))
 
+def add_neighbor(msg):
+    global count
+    with lock:
+        print(msg.split(" "))
+        _,iid, host, port, metric = msg.split()
+        print(iid, host, port, metric)
+        uuid = iid.split("=")[1]
+        hostname = host.split("=")[1]
+        backend_port = port.split("=")[1]
+        distance_metric = metric.split("=")[1]
+        info = {"uuid": uuid.strip(), 
+                    "hostname" : "localhost",
+                        "backend_port" : backend_port.strip(), 
+                            "distance_metric": distance_metric.strip(),
+                                "name": None,
+                                     "active": False}
+        node_neighbors[count] = info
+        present_neighbors[uuid.strip()] = count
+        count += 1
+        #print(node_neighbors)
+            
 
 def receive():
     # create socket
@@ -97,8 +121,7 @@ def receive():
             s.close()
             exit()
         elif msg == "uuid":
-            output = str({"uuid":node_info["uuid"]})
-            print(ast.literal_eval(output))
+            return_uuid()
         elif msg == "neighbors":
             return_neighbors()
         elif "sendKA" in msg:
@@ -108,6 +131,9 @@ def receive():
             idx = present_neighbors[neigh_uuid] 
             node_neighbors[idx]["name"] = msg.split()[2]
             node_neighbors[idx]["active"] = True
+        elif "addneighbor" in msg:
+            add_neighbor(msg)
+
 
     # exit
     s.close()
