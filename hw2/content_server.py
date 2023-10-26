@@ -1,6 +1,7 @@
 import sys
 import ast
 import socket, sys
+import threading
 
 
 
@@ -12,30 +13,36 @@ node_neighbors = dict()
 present_neighbors = dict()
 
 def client():
-    server_address = node_neighbors["peer_0"]["hostname"]
-    server_port = int(node_neighbors["peer_0"]["backend_port"])
-    #MAKE IT A FOR LOOP INSTEAD but for testing leave it like this!!
+    print("client")
+    while True:
+        for n in node_neighbors:
+            server_address = node_neighbors[n]["hostname"]
+            server_port = int(node_neighbors[n]["backend_port"])
+            # create socket
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.setblocking(0) #make non-blocking 
+            # generate message
+            msg_string = "Message for " + node_neighbors[n]["uuid"] + " from" + node_info["uuid"]
 
-    # create socket
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            # send message to server
+            s.sendto(msg_string.encode(), (server_address, server_port))
 
-    # get message from keyboard
-    msg_string = input('Send this to the server: ')
+            # get echo message
+            try:
+                echo_string, addr = s.recvfrom(BUFSIZE)
+                # print echo message
+                print('Echo from the server: '+echo_string.decode())
+            except socket.error as e:
+            # If no data is available, an error will be raised
+                pass
 
-    # send message to server
-    s.sendto(msg_string.encode(), (server_address, server_port))
+            # exit
+            s.close()
 
-    # get echo message
-    echo_string, addr = s.recvfrom(BUFSIZE)
-
-    # print echo message
-    print('Echo from the server: '+echo_string.decode())
-
-    # exit
-    s.close()
-    sys.exit(0)
+    #sys.exit(0) dont really want to exit program
 
 def server():
+    print("server")
     # create socket
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     SERVER_PORT = int(node_info["backend_port"])
@@ -95,13 +102,17 @@ if __name__ == '__main__':
     config_file = sys.argv[2]
     set_configuration(config_file)
 
-    if node_info["uuid"] == "825ced20-72f6-11ee-b962-0242ac120002":
-        client()
-    elif node_info["uuid"] == "9148a284-72f6-11ee-b962-0242ac120002":
-        server()
-    
+    server_thread = threading.Thread(target=server, daemon=True)
+    client_thread = threading.Thread(target=client, daemon=True)
+    server_thread.start()
+    client_thread.start()
+
+    while True:
+        continue
+
     # for line in sys.stdin:
-        
+    #     print(sys.stdin)
+            
     #     if "uuid" == line.strip():
     #         output = str({"uuid":node_info["uuid"]})
     #         print(ast.literal_eval(output))
