@@ -26,7 +26,8 @@ def set_configuration(config_file):
                 node_neighbors[key] = {"uuid": uuid.strip(), 
                                        "hostname" : hostname.strip(),
                                         "backend_port" : backend_port.strip(), 
-                                         "distance_metric": distance_metric.strip()}
+                                         "distance_metric": distance_metric.strip(),
+                                          "name": None}
 
 if __name__ == '__main__':
     command = sys.argv[1]
@@ -38,5 +39,15 @@ if __name__ == '__main__':
         if "uuid" == line.strip():
             output = str({"uuid":node_info["uuid"]})
             print(ast.literal_eval(output))
+        elif "neighbors" == line.strip():
+            output = {"neighbors": dict()}
+            for n in node_neighbors:
+                output["neighbors"][node_neighbors[n]["name"]] = {"uuid": node_neighbors[n]["uuid"], 
+                                                                  "host": node_neighbors[n]["hostname"],
+                                                                  "backend_port": int(node_neighbors[n]["backend_port"]),
+                                                                  "metric": int(node_neighbors[n]["distance_metric"])}
+            output = str(output)
+            print(ast.literal_eval(output))
+
         if "Exit" == line.strip():
             break
