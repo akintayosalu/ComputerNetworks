@@ -3,9 +3,6 @@ import ast
 import socket, sys
 import threading
 
-
-
-SERVER_HOST = ''  # Symbolic name, meaning all available interfaces
 BUFSIZE = 1024  # size of receiving buffer
 
 node_info = dict() #stores info like uuid, name, port, peer_count
@@ -13,7 +10,6 @@ node_neighbors = dict()
 present_neighbors = dict()
 
 def client():
-    print("client")
     while True:
         for n in node_neighbors:
             server_address = node_neighbors[n]["hostname"]
@@ -27,13 +23,13 @@ def client():
             # send message to server
             s.sendto(msg_string.encode(), (server_address, server_port))
 
-            # get echo message
             try:
+                # get echo message
                 echo_string, addr = s.recvfrom(BUFSIZE)
                 # print echo message
                 print('Echo from the server: '+echo_string.decode())
             except socket.error as e:
-            # If no data is available, an error will be raised
+                # If no data is available, an error will be raised
                 pass
 
             # exit
@@ -50,7 +46,7 @@ def server():
 
     # main loop
     while True:
-         # accept a packet
+        # accept a packet
         dgram, addr = s.recvfrom(BUFSIZE)
         dgram = dgram.decode()
 
@@ -107,8 +103,8 @@ if __name__ == '__main__':
     server_thread.start()
     client_thread.start()
 
-    while True:
-        continue
+    # while True:
+    #     continue
 
     # for line in sys.stdin:
     #     print(sys.stdin)
