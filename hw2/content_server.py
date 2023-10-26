@@ -9,36 +9,36 @@ node_info = dict() #stores info like uuid, name, port, peer_count
 node_neighbors = dict()
 present_neighbors = dict()
 
+def keep_alive():
+    for n in node_neighbors:
+        server_address = node_neighbors[n]["hostname"]
+        server_port = int(node_neighbors[n]["backend_port"])
+        # create socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.setblocking(0) #make non-blocking 
+        # generate message
+        msg_string = node_info["uuid"] + " -> " + node_neighbors[n]["uuid"]
+
+        # send message to server
+        s.sendto(msg_string.encode(), (server_address, server_port))
+
+        try:
+            # get echo message
+            echo_string, addr = s.recvfrom(BUFSIZE)
+            # print echo message
+            print('Echo from the server: '+echo_string.decode(),flush=True)
+        except socket.error as e:
+            # If no data is available, an error will be raised
+            pass
+
+        s.close() #close port 
+
 def client():
     while True:
-        for n in node_neighbors:
-            server_address = node_neighbors[n]["hostname"]
-            server_port = int(node_neighbors[n]["backend_port"])
-            # create socket
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.setblocking(0) #make non-blocking 
-            # generate message
-            msg_string = "Message for " + node_neighbors[n]["uuid"] + " from" + node_info["uuid"]
-
-            # send message to server
-            s.sendto(msg_string.encode(), (server_address, server_port))
-
-            try:
-                # get echo message
-                echo_string, addr = s.recvfrom(BUFSIZE)
-                # print echo message
-                print('Echo from the server: '+echo_string.decode())
-            except socket.error as e:
-                # If no data is available, an error will be raised
-                pass
-
-            # exit
-            s.close()
-
+        keep_alive()
     #sys.exit(0) dont really want to exit program
 
-def server():
-    print("server")
+def receive():
     # create socket
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     SERVER_PORT = int(node_info["backend_port"])
@@ -51,7 +51,7 @@ def server():
         dgram = dgram.decode()
 
         # print the message
-        print('New connection from '+str(addr[0])+':'+str(addr[1])+'; Message: '+dgram)
+        print('New connection from '+str(addr[0])+':'+str(addr[1])+'; Message: '+dgram,flush=True)
 
         # echo the message back
         s.sendto(dgram.encode(), addr)
@@ -59,6 +59,9 @@ def server():
     # exit
     s.close()
     sys.exit(0)
+
+def server():
+    receive()
 
 def set_configuration(config_file):
     file1 = open(config_file, "r")
@@ -91,7 +94,7 @@ def return_neighbors():
                                                               "backend_port": int(node_neighbors[n]["backend_port"]),
                                                               "metric": int(node_neighbors[n]["distance_metric"])}
     output = str(output)
-    print(ast.literal_eval(output))
+    print(ast.literal_eval(output),flush=True)
 
 if __name__ == '__main__':
     command = sys.argv[1]
@@ -100,11 +103,13 @@ if __name__ == '__main__':
 
     server_thread = threading.Thread(target=server, daemon=True)
     client_thread = threading.Thread(target=client, daemon=True)
-    server_thread.start()
-    client_thread.start()
+    threads = [client_thread, server_thread]
+    
+    for t in threads:
+        t.start()
 
-    # while True:
-    #     continue
+    while True:
+        continue
 
     # for line in sys.stdin:
     #     print(sys.stdin)
