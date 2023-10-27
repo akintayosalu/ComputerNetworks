@@ -37,20 +37,6 @@ def send_ack(msg):
         node_neighbors[idx]["time"] = int(time.time())
         node_neighbors[idx]["name"] = name
         node_neighbors[idx]["active"] = True
-        #(node_neighbors[idx]["time"],node_neighbors[idx]["name"])
-        #add some logic here 
-
-    # server_address = "localhost"
-    # server_port = backend_port
-    # s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-    # # send acknowledgement msg
-    # node_msg = {"name":node_info["name"], "uuid": node_info["uuid"], "backend_port": node_info["backend_port"], "distance_metric" : distance_metric}
-    # msg_string = "confirmKA " + node_info["uuid"] + " " + node_info["name"] + " " + str(node_msg)
-
-    # # send message to server
-    # s.sendto(msg_string.encode(), (server_address, int(server_port)))
-    # s.close()
 
 def client():
     # create socket
@@ -66,31 +52,6 @@ def client():
 
         if "sendKA" in msg:
             send_ack(msg)
-        # elif "confirmKA" in msg:
-        #     neigh_uuid = msg.split()[1]
-        #     if neigh_uuid in present_neighbors:
-        #         idx = present_neighbors[neigh_uuid] 
-        #         node_neighbors[idx]["name"] = msg.split()[2]
-        #         node_neighbors[idx]["active"] = True
-        #     else:
-        #         print(msg.split()[3])
-        #         neigh_info = ast.literal_eval(msg.split()[3])
-        #         name, uuid, hostname, backend_port, distance_metric = neigh_info["name"], neigh_info["uuid"], "localhost", neigh_info["backend_port"], neigh_info["distance_metric"]
-        #         global count
-        #         with lock:
-        #             neigh_info = {"uuid": uuid, 
-        #                         "hostname" : hostname,
-        #                         "backend_port" : backend_port, 
-        #                         "distance_metric": distance_metric,
-        #                         "name": name,
-        #                         "active": True,
-        #                         "time": int(time.time())}
-        #             node_neighbors[count] = neigh_info
-        #             present_neighbors[uuid] = count
-        #             count += 1
-
-
-
             
 def check_active_nodes():
     while True:
@@ -104,9 +65,6 @@ def check_active_nodes():
                 idx = present_neighbors[uuid] 
                 node_neighbors[idx]["active"] = False
                 node_neighbors[idx]["time"] = None
-                #del node_neighbors[idx]
-                #del present_neighbors[uuid]
-                #print("Removing " + uuid)
 
 def keep_alive():
     while True:
@@ -134,8 +92,6 @@ def receive():
     threads = [keep_alive_messages, check_nodes]
     for t in threads:
         t.start()
-    # keep_alive_messages.start()
-    # check_active_nodes.start()
 
 def server():
     receive()
