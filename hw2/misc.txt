@@ -1,1 +1,4 @@
-addneighbor uuid=998cd910-72f6-11ee-b962-0242ac120002 host=localhost backend_port=18443 metric=21
+addneighbor uuid=998cd910-72f6-11ee-b962-0242ac120002 host=localhost backend_port=18443 metric=30
+
+addneighbor uuid=bce54d70-75da-11ee-b962-0242ac120002 host=localhost backend_port=18444 metric=100
+addneighbor uuid=ed57bb00-75da-11ee-b962-0242ac120002 host=localhost backend_port=18445 metric=80
