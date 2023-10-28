@@ -8,35 +8,35 @@ BUFSIZE = 1024  # size of receiving buffer
 
 node_info = dict() #stores info like uuid, name, port, peer_count
 node_neighbors = dict()
-present_neighbors = dict()
+# present_neighbors = dict()
 
-count = 0
-lock = threading.Lock()
-print_lock = threading.Lock()
+# count = 0
+# lock = threading.Lock()
+# print_lock = threading.Lock()
 
 def send_ack(msg):
     _, info, _, _ = msg.split("|")
     neigh_info = ast.literal_eval(info)
     name, uuid, hostname, backend_port, distance_metric = neigh_info["name"], neigh_info["uuid"], "localhost", neigh_info["backend_port"], neigh_info["distance_metric"]
-    if uuid not in present_neighbors:
-        global count
-        with lock:
-            neigh_info = {"uuid": uuid, 
-                          "hostname" : hostname,
-                          "backend_port" : backend_port, 
-                          "distance_metric": distance_metric,
-                          "name": name,
-                          "active": True,
-                          "time": int(time.time())}
-            node_neighbors[count] = neigh_info
-            present_neighbors[uuid] = count
-            count += 1
+    if uuid not in node_neighbors:
+        # global count
+        # with lock:
+        neigh_info = {"uuid": uuid, 
+                      "hostname" : hostname,
+                      "backend_port" : backend_port, 
+                      "distance_metric": distance_metric,
+                      "name": name,
+                      "active": True,
+                      "time": int(time.time())}
+        node_neighbors[uuid] = neigh_info
+            # present_neighbors[uuid] = count
+            # count += 1
     else:
-        #need to test this 
-        idx = present_neighbors[uuid] 
-        node_neighbors[idx]["time"] = int(time.time())
-        node_neighbors[idx]["name"] = name
-        node_neighbors[idx]["active"] = True
+        #updating last time keep alive from neighbour was received 
+        #idx = present_neighbors[uuid] 
+        node_neighbors[uuid]["time"] = int(time.time())
+        node_neighbors[uuid]["name"] = name
+        node_neighbors[uuid]["active"] = True
 
 def client():
     # create socket
@@ -58,20 +58,20 @@ def check_active_nodes():
         copy_neighbors = json.dumps(node_neighbors)
         neigh_data = json.loads(copy_neighbors)
         for n in neigh_data:
-            timestamp = neigh_data[str(n)]["time"]
+            timestamp = neigh_data[n]["time"]
             if timestamp != None and (int(time.time()) - timestamp) > 5:
                 #then it is inactive
-                uuid = neigh_data[str(n)]["uuid"]
-                idx = present_neighbors[uuid] 
-                node_neighbors[idx]["active"] = False
-                node_neighbors[idx]["time"] = None
+                uuid = neigh_data[n]["uuid"]
+                #idx = present_neighbors[uuid] 
+                node_neighbors[uuid]["active"] = False
+                node_neighbors[uuid]["time"] = None
 
 def keep_alive():
     while True:
         copy_neighbors = json.dumps(node_neighbors)
         neigh_data = json.loads(copy_neighbors)
         for n in neigh_data:
-            data = neigh_data[str(n)]
+            data = neigh_data[n]
             server_address = data["hostname"]
             server_port = int(data["backend_port"])
 
@@ -84,6 +84,7 @@ def keep_alive():
             # send message to server
             s.sendto(msg_string.encode(), (server_address, server_port))
             s.close() #close port 
+        time.sleep(2) #adding 2 second delay before sending out next round of keep alives
 
 def receive():
     keep_alive_messages = threading.Thread(target=keep_alive, daemon=True)
@@ -101,31 +102,32 @@ def return_uuid():
     print(ast.literal_eval(output))
 
 def add_neighbor(msg):
-    global count
-    with lock:
-        _,iid, host, port, metric = msg.split()
-        uuid = iid.split("=")[1]
-        hostname = host.split("=")[1]
-        backend_port = port.split("=")[1]
-        distance_metric = metric.split("=")[1]
-        info = {"uuid": uuid.strip(), 
-                "hostname" : "localhost",
-                "backend_port" : backend_port.strip(), 
-                "distance_metric": distance_metric.strip(),
-                "name": None,
-                "active": False,
-                "time": None}
+    # global count
+    # with lock:
+    _,iid, host, port, metric = msg.split()
+    uuid = iid.split("=")[1]
+    hostname = host.split("=")[1]
+    backend_port = port.split("=")[1]
+    distance_metric = metric.split("=")[1]
+    info = {"uuid": uuid.strip(), 
+            "hostname" : "localhost",
+            "backend_port" : backend_port.strip(), 
+            "distance_metric": distance_metric.strip(),
+            "name": None,
+            "active": False,
+            "time": None}
         
-        node_neighbors[count] = info
-        present_neighbors[uuid.strip()] = count
-        count += 1
+    node_neighbors[uuid.strip()] = info
+    # present_neighbors[uuid.strip()] = count
+    # count += 1
 
 def return_neighbors():
     output = {"neighbors": dict()}
     copy_neighbors = json.dumps(node_neighbors)
     neigh_data = json.loads(copy_neighbors)
     for n in neigh_data:
-        data = neigh_data[str(n)]
+        #data = neigh_data[str(n)]
+        data = neigh_data[n]
         if data["active"]:
             output["neighbors"][data["name"]] = {"uuid": data["uuid"], 
                                                 "host": data["hostname"],
@@ -148,7 +150,7 @@ def set_configuration(config_file):
             else:
                 #add mapping of temp 
                 #handling info on neighbor to node 
-                global count
+                #global count
                 uuid, hostname, backend_port, distance_metric = value.split(",")
                 info = {"uuid": uuid.strip(), 
                         "hostname" : "localhost",
@@ -158,9 +160,9 @@ def set_configuration(config_file):
                         "active": False,
                         "time": None}
 
-                node_neighbors[count] = info
-                present_neighbors[uuid.strip()] = count
-                count += 1
+                node_neighbors[uuid.strip()] = info
+                #present_neighbors[uuid.strip()] = count
+                #count += 1
 
 if __name__ == '__main__':
     command = sys.argv[1]
