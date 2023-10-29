@@ -10,6 +10,9 @@ node_info = dict() #stores info like uuid, name, port, peer_count
 node_neighbors = dict()
 # present_neighbors = dict()
 
+seq = 0
+graph = dict()
+
 # count = 0
 # lock = threading.Lock()
 # print_lock = threading.Lock()
@@ -38,6 +41,8 @@ def send_ack(msg):
         node_neighbors[uuid]["name"] = name
         node_neighbors[uuid]["active"] = True
 
+#def receive_lsa(msg):
+
 def client():
     # create socket
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -52,6 +57,8 @@ def client():
 
         if "sendKA" in msg:
             send_ack(msg)
+        # elif "LSA" in msg:
+        #     receive_lsa(msg)
             
 def check_active_nodes():
     while True:

@@ -3,23 +3,82 @@ import ast
 import socket, sys
 import threading
 import json 
+import time
 BUFSIZE = 1024  # size of receiving buffer
 
 node_info = dict() #stores info like uuid, name, port, peer_count
 node_neighbors = dict()
-present_neighbors = dict()
+# present_neighbors = dict()
 
-count = 0
-lock = threading.Lock()
-print_lock = threading.Lock()
+seq = 0
+graph = dict()
 
+# count = 0
+# lock = threading.Lock()
+# print_lock = threading.Lock()
+
+def send_ack(msg):
+    _, info, _, _ = msg.split("|")
+    neigh_info = ast.literal_eval(info)
+    name, uuid, hostname, backend_port, distance_metric = neigh_info["name"], neigh_info["uuid"], "localhost", neigh_info["backend_port"], neigh_info["distance_metric"]
+    if uuid not in node_neighbors:
+        # global count
+        # with lock:
+        neigh_info = {"uuid": uuid, 
+                      "hostname" : hostname,
+                      "backend_port" : backend_port, 
+                      "distance_metric": distance_metric,
+                      "name": name,
+                      "active": True,
+                      "time": int(time.time())}
+        node_neighbors[uuid] = neigh_info
+            # present_neighbors[uuid] = count
+            # count += 1
+    else:
+        #updating last time keep alive from neighbour was received 
+        #idx = present_neighbors[uuid] 
+        node_neighbors[uuid]["time"] = int(time.time())
+        node_neighbors[uuid]["name"] = name
+        node_neighbors[uuid]["active"] = True
+
+#def receive_lsa(msg):
+
+def client():
+    # create socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    SERVER_PORT = int(node_info["backend_port"])
+    s.bind(("localhost", SERVER_PORT))
+
+    # main loop
+    while True:
+        # accept a packet
+        msg, addr = s.recvfrom(BUFSIZE)
+        msg = msg.decode()
+
+        if "sendKA" in msg:
+            send_ack(msg)
+        # elif "LSA" in msg:
+        #     receive_lsa(msg)
+            
+def check_active_nodes():
+    while True:
+        copy_neighbors = json.dumps(node_neighbors)
+        neigh_data = json.loads(copy_neighbors)
+        for n in neigh_data:
+            timestamp = neigh_data[n]["time"]
+            if timestamp != None and (int(time.time()) - timestamp) > 5:
+                #then it is inactive
+                uuid = neigh_data[n]["uuid"]
+                #idx = present_neighbors[uuid] 
+                node_neighbors[uuid]["active"] = False
+                node_neighbors[uuid]["time"] = None
 
 def keep_alive():
     while True:
         copy_neighbors = json.dumps(node_neighbors)
         neigh_data = json.loads(copy_neighbors)
         for n in neigh_data:
-            data = neigh_data[str(n)]
+            data = neigh_data[n]
             server_address = data["hostname"]
             server_port = int(data["backend_port"])
 
@@ -32,115 +91,57 @@ def keep_alive():
             # send message to server
             s.sendto(msg_string.encode(), (server_address, server_port))
             s.close() #close port 
+        time.sleep(2) #adding 2 second delay before sending out next round of keep alives
 
-def client():
-    while True:
-        server_address = "localhost"
-        server_port = int(node_info["backend_port"])
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+def receive():
+    keep_alive_messages = threading.Thread(target=keep_alive, daemon=True)
+    check_nodes = threading.Thread(target=check_active_nodes, daemon=True)
 
-        # get message from keyboard
-        #msg_string = input('Send this to the server: ')
-        msg_string = input()
+    threads = [keep_alive_messages, check_nodes]
+    for t in threads:
+        t.start()
 
-        # send message to server
-        s.sendto(msg_string.encode(), (server_address, server_port))
-        s.close()
-    #sys.exit(0) dont really want to exit program
-
-def send_ack(msg):
-    _, info, _, _ = msg.split("|")
-    neigh_info = ast.literal_eval(info)
-    name, uuid, hostname, backend_port, distance_metric = neigh_info["name"], neigh_info["uuid"], "localhost", neigh_info["backend_port"], neigh_info["distance_metric"]
-    global count
-    with lock:
-        neigh_info = {"uuid": uuid, 
-                                "hostname" : hostname,
-                                "backend_port" : backend_port, 
-                                "distance_metric": distance_metric,
-                                    "name": name,
-                                    "active": True}
-        node_neighbors[count] = neigh_info
-        present_neighbors[uuid] = count
-        count += 1
-
-    server_address = "localhost"
-    server_port = backend_port
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-    # send acknowledgement msg
-    msg_string = "confirmKA " + node_info["uuid"] + " " + node_info["name"]
-
-    # send message to server
-    s.sendto(msg_string.encode(), (server_address, int(server_port)))
-    s.close()
+def server():
+    receive()
 
 def return_uuid():
     output = str({"uuid":node_info["uuid"]})
     print(ast.literal_eval(output))
 
 def add_neighbor(msg):
-    global count
-    with lock:
-        print(msg.split(" "))
-        _,iid, host, port, metric = msg.split()
-        print(iid, host, port, metric)
-        uuid = iid.split("=")[1]
-        hostname = host.split("=")[1]
-        backend_port = port.split("=")[1]
-        distance_metric = metric.split("=")[1]
-        info = {"uuid": uuid.strip(), 
-                    "hostname" : "localhost",
-                        "backend_port" : backend_port.strip(), 
-                            "distance_metric": distance_metric.strip(),
-                                "name": None,
-                                     "active": False}
-        node_neighbors[count] = info
-        present_neighbors[uuid.strip()] = count
-        count += 1
-        #print(node_neighbors)
-            
+    # global count
+    # with lock:
+    _,iid, host, port, metric = msg.split()
+    uuid = iid.split("=")[1]
+    hostname = host.split("=")[1]
+    backend_port = port.split("=")[1]
+    distance_metric = metric.split("=")[1]
+    info = {"uuid": uuid.strip(), 
+            "hostname" : hostname.strip(),
+            "backend_port" : backend_port.strip(), 
+            "distance_metric": distance_metric.strip(),
+            "name": None,
+            "active": False,
+            "time": None}
+        
+    node_neighbors[uuid.strip()] = info
+    # present_neighbors[uuid.strip()] = count
+    # count += 1
 
-def receive():
-    # create socket
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    SERVER_PORT = int(node_info["backend_port"])
-    s.bind(("localhost", SERVER_PORT))
-
-    keep_alive_messages = threading.Thread(target=keep_alive, daemon=True)
-    keep_alive_messages.start()
-
-    # main loop
-    while True:
-        # accept a packet
-        msg, addr = s.recvfrom(BUFSIZE)
-        msg = msg.decode()
-        # print(msg)
-
-        if msg == "kill": #not working how I would like 
-            s.close()
-            exit()
-        elif msg == "uuid":
-            return_uuid()
-        elif msg == "neighbors":
-            return_neighbors()
-        elif "sendKA" in msg:
-            send_ack(msg)
-        elif "confirmKA" in msg:
-            neigh_uuid = msg.split()[1]
-            idx = present_neighbors[neigh_uuid] 
-            node_neighbors[idx]["name"] = msg.split()[2]
-            node_neighbors[idx]["active"] = True
-        elif "addneighbor" in msg:
-            add_neighbor(msg)
-
-
-    # exit
-    s.close()
-    sys.exit(0)
-
-def server():
-    receive()
+def return_neighbors():
+    output = {"neighbors": dict()}
+    copy_neighbors = json.dumps(node_neighbors)
+    neigh_data = json.loads(copy_neighbors)
+    for n in neigh_data:
+        #data = neigh_data[str(n)]
+        data = neigh_data[n]
+        if data["active"]:
+            output["neighbors"][data["name"]] = {"uuid": data["uuid"], 
+                                                "host": data["hostname"],
+                                                "backend_port": int(data["backend_port"]),
+                                                "metric": int(data["distance_metric"])}
+    output = str(output)
+    print(ast.literal_eval(output))
 
 def set_configuration(config_file):
     file1 = open(config_file, "r")
@@ -156,33 +157,19 @@ def set_configuration(config_file):
             else:
                 #add mapping of temp 
                 #handling info on neighbor to node 
-                global count
-                with lock:
-                    uuid, hostname, backend_port, distance_metric = value.split(",")
-                    info = {"uuid": uuid.strip(), 
-                                        "hostname" : "localhost",
-                                            "backend_port" : backend_port.strip(), 
-                                            "distance_metric": distance_metric.strip(),
-                                            "name": None,
-                                            "active": False}
+                #global count
+                uuid, hostname, backend_port, distance_metric = value.split(",")
+                info = {"uuid": uuid.strip(), 
+                        "hostname" : hostname.strip(),
+                        "backend_port" : backend_port.strip(), 
+                        "distance_metric": distance_metric.strip(),
+                        "name": None,
+                        "active": False,
+                        "time": None}
 
-                    node_neighbors[count] = info
-                    present_neighbors[uuid.strip()] = count
-                    count += 1
-
-def return_neighbors():
-    output = {"neighbors": dict()}
-    copy_neighbors = json.dumps(node_neighbors)
-    neigh_data = json.loads(copy_neighbors)
-    for n in neigh_data:
-        data = neigh_data[str(n)]
-        if data["active"]:
-            output["neighbors"][data["name"]] = {"uuid": data["uuid"], 
-                                                    "host": data["hostname"],
-                                                        "backend_port": int(data["backend_port"]),
-                                                            "metric": int(data["distance_metric"])}
-    output = str(output)
-    print(ast.literal_eval(output))
+                node_neighbors[uuid.strip()] = info
+                #present_neighbors[uuid.strip()] = count
+                #count += 1
 
 if __name__ == '__main__':
     command = sys.argv[1]
@@ -197,4 +184,19 @@ if __name__ == '__main__':
         t.start()
 
     while True:
-        continue
+        msg_string = input("Input command for system ")
+
+        if msg_string == "uuid":
+            return_uuid()
+        elif msg_string == "neighbors":
+            return_neighbors()
+        elif "addneighbor" in msg_string:
+            add_neighbor(msg_string)
+        elif msg_string == "kill":
+            exit(0)
+        elif msg_string == "print_neighbour":
+            print(str(node_neighbors))
+        # elif msg_string == "print_present":
+        #     print(str(present_neighbors))
+
+        
