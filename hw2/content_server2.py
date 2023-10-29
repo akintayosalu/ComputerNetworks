@@ -117,7 +117,7 @@ def add_neighbor(msg):
     backend_port = port.split("=")[1]
     distance_metric = metric.split("=")[1]
     info = {"uuid": uuid.strip(), 
-            "hostname" : "localhost",
+            "hostname" : hostname.strip(),
             "backend_port" : backend_port.strip(), 
             "distance_metric": distance_metric.strip(),
             "name": None,
@@ -160,7 +160,7 @@ def set_configuration(config_file):
                 #global count
                 uuid, hostname, backend_port, distance_metric = value.split(",")
                 info = {"uuid": uuid.strip(), 
-                        "hostname" : "localhost",
+                        "hostname" : hostname.strip(),
                         "backend_port" : backend_port.strip(), 
                         "distance_metric": distance_metric.strip(),
                         "name": None,
@@ -193,10 +193,10 @@ if __name__ == '__main__':
         elif "addneighbor" in msg_string:
             add_neighbor(msg_string)
         elif msg_string == "kill":
-            sys.exit(0)
+            exit(0)
         elif msg_string == "print_neighbour":
             print(str(node_neighbors))
-        elif msg_string == "print_present":
-            print(str(present_neighbors))
+        # elif msg_string == "print_present":
+        #     print(str(present_neighbors))
 
         

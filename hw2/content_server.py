@@ -8,22 +8,17 @@ BUFSIZE = 1024  # size of receiving buffer
 
 node_info = dict() #stores info like uuid, name, port, peer_count
 node_neighbors = dict()
-# present_neighbors = dict()
 
 seq = 0
 graph = dict()
-
-# count = 0
-# lock = threading.Lock()
-# print_lock = threading.Lock()
+s = None
+threads_running = False
 
 def send_ack(msg):
     _, info, _, _ = msg.split("|")
     neigh_info = ast.literal_eval(info)
     name, uuid, hostname, backend_port, distance_metric = neigh_info["name"], neigh_info["uuid"], "localhost", neigh_info["backend_port"], neigh_info["distance_metric"]
     if uuid not in node_neighbors:
-        # global count
-        # with lock:
         neigh_info = {"uuid": uuid, 
                       "hostname" : hostname,
                       "backend_port" : backend_port, 
@@ -32,8 +27,6 @@ def send_ack(msg):
                       "active": True,
                       "time": int(time.time())}
         node_neighbors[uuid] = neigh_info
-            # present_neighbors[uuid] = count
-            # count += 1
     else:
         #updating last time keep alive from neighbour was received 
         #idx = present_neighbors[uuid] 
@@ -45,23 +38,25 @@ def send_ack(msg):
 
 def client():
     # create socket
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    SERVER_PORT = int(node_info["backend_port"])
-    s.bind(("localhost", SERVER_PORT))
+    s.setblocking(0)
 
     # main loop
-    while True:
+    while threads_running:
         # accept a packet
-        msg, addr = s.recvfrom(BUFSIZE)
-        msg = msg.decode()
+        
+        try: 
+            msg, addr = s.recvfrom(BUFSIZE)
+            msg = msg.decode()
 
-        if "sendKA" in msg:
-            send_ack(msg)
-        # elif "LSA" in msg:
-        #     receive_lsa(msg)
+            if "sendKA" in msg:
+                send_ack(msg)
+        except:
+            pass
+    s.close()
+    return 
             
 def check_active_nodes():
-    while True:
+    while threads_running:
         copy_neighbors = json.dumps(node_neighbors)
         neigh_data = json.loads(copy_neighbors)
         for n in neigh_data:
@@ -73,8 +68,10 @@ def check_active_nodes():
                 node_neighbors[uuid]["active"] = False
                 node_neighbors[uuid]["time"] = None
 
+    return 
+
 def keep_alive():
-    while True:
+    while threads_running:
         copy_neighbors = json.dumps(node_neighbors)
         neigh_data = json.loads(copy_neighbors)
         for n in neigh_data:
@@ -92,25 +89,15 @@ def keep_alive():
             s.sendto(msg_string.encode(), (server_address, server_port))
             s.close() #close port 
         time.sleep(2) #adding 2 second delay before sending out next round of keep alives
+    return 
 
-def receive():
-    keep_alive_messages = threading.Thread(target=keep_alive, daemon=True)
-    check_nodes = threading.Thread(target=check_active_nodes, daemon=True)
-
-    threads = [keep_alive_messages, check_nodes]
-    for t in threads:
-        t.start()
-
-def server():
-    receive()
 
 def return_uuid():
-    output = str({"uuid":node_info["uuid"]})
-    print(ast.literal_eval(output))
+    #output = str({"uuid":node_info["uuid"]})
+    print({"uuid":node_info["uuid"]})
+    #print(ast.literal_eval(output))
 
 def add_neighbor(msg):
-    # global count
-    # with lock:
     _,iid, host, port, metric = msg.split()
     uuid = iid.split("=")[1]
     hostname = host.split("=")[1]
@@ -125,23 +112,19 @@ def add_neighbor(msg):
             "time": None}
         
     node_neighbors[uuid.strip()] = info
-    # present_neighbors[uuid.strip()] = count
-    # count += 1
 
 def return_neighbors():
     output = {"neighbors": dict()}
     copy_neighbors = json.dumps(node_neighbors)
     neigh_data = json.loads(copy_neighbors)
     for n in neigh_data:
-        #data = neigh_data[str(n)]
         data = neigh_data[n]
         if data["active"]:
             output["neighbors"][data["name"]] = {"uuid": data["uuid"], 
                                                 "host": data["hostname"],
                                                 "backend_port": int(data["backend_port"]),
                                                 "metric": int(data["distance_metric"])}
-    output = str(output)
-    print(ast.literal_eval(output))
+    print(output)
 
 def set_configuration(config_file):
     file1 = open(config_file, "r")
@@ -155,9 +138,6 @@ def set_configuration(config_file):
             if key == "peer_count":
                 node_info[key] = value
             else:
-                #add mapping of temp 
-                #handling info on neighbor to node 
-                #global count
                 uuid, hostname, backend_port, distance_metric = value.split(",")
                 info = {"uuid": uuid.strip(), 
                         "hostname" : hostname.strip(),
@@ -168,23 +148,28 @@ def set_configuration(config_file):
                         "time": None}
 
                 node_neighbors[uuid.strip()] = info
-                #present_neighbors[uuid.strip()] = count
-                #count += 1
 
 if __name__ == '__main__':
     command = sys.argv[1]
     config_file = sys.argv[2]
     set_configuration(config_file)
 
-    server_thread = threading.Thread(target=server, daemon=True)
-    client_thread = threading.Thread(target=client, daemon=True)
-    threads = [client_thread, server_thread]
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    SERVER_PORT = int(node_info["backend_port"])
+    s.bind(("localhost", SERVER_PORT))
+
+    keep_alive_messages = threading.Thread(target=keep_alive)
+    check_nodes = threading.Thread(target=check_active_nodes)
+    client_thread = threading.Thread(target=client)
+    threads = [client_thread, keep_alive_messages,check_nodes]
+    
+    threads_running = True
     
     for t in threads:
         t.start()
 
     while True:
-        msg_string = input("Input command for system ")
+        msg_string = input()
 
         if msg_string == "uuid":
             return_uuid()
@@ -193,10 +178,14 @@ if __name__ == '__main__':
         elif "addneighbor" in msg_string:
             add_neighbor(msg_string)
         elif msg_string == "kill":
+            threads_running = False
+            for t in threads:
+                t.join()
+            s.close()
             exit(0)
         elif msg_string == "print_neighbour":
-            print(str(node_neighbors))
-        # elif msg_string == "print_present":
-        #     print(str(present_neighbors))
-
-        
+            print(node_neighbors)
+        elif "map" in msg_string:
+            print({"map":dict()})
+        elif "rank" in msg_string:
+            print({"rank":dict()})
