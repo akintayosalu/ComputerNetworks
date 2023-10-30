@@ -4,20 +4,23 @@ import socket, sys
 import threading
 import json 
 import time
+import heapq
 BUFSIZE = 1024  # size of receiving buffer
 
 node_info = dict() #stores info like uuid, name, port, peer_count
-node_neighbors = dict()
-seq_dict = dict()
-seq_dict_lock = threading.Lock()
+node_neighbors = dict() #stores info on node's neighbors
+seq_dict = dict() #stores sequence number for received LSAs
+seq_dict_lock = threading.Lock() 
 stored_lsa = dict()
-lsa_lock = threading.Lock()
-inactive_nodes = set()
+lsa_lock = threading.Lock() #lock for stored LSA acces
+inactive_nodes = set() #stores inactive nodes in entire graph based on LSAs 
+graph = dict()
+graph_lock = threading.Lock() #lock for accesing graph
+seq = 1 #sequence number for LSAs 
+s = None #client socket 
+threads_running = False #flag to inform threads to keep running 
 
-seq = 1
-s = None
-threads_running = False
-
+#helper to accept keep alive messages and update node's neighbors as required 
 def send_ack(msg):
     global seq_dict
     _, info, _, _ = msg.split("|")
@@ -36,6 +39,7 @@ def send_ack(msg):
             seq_dict[name] = 0
 
     else: 
+        #update time a keep alive from a certain neighbor was received 
         node_neighbors[uuid]["time"] = int(time.time())
         node_neighbors[uuid]["name"] = name
         node_neighbors[uuid]["active"] = True
@@ -43,7 +47,7 @@ def send_ack(msg):
             if name not in seq_dict:
                 seq_dict[name] = 0
 
-
+#helper that receives recent LSAs and stores it
 def receive_lsa(msg):
     global seq_dict
     global stored_lsa
@@ -52,7 +56,7 @@ def receive_lsa(msg):
     with seq_dict_lock:
         if sender_name not in seq_dict:
             seq_dict[sender_name] = int(sender_seq)
-
+        #discard LSA if sequence number is < last stored LSA from specific neighbor
         if seq_dict[sender_name] > int(sender_seq):
             return
         seq_dict[sender_name] = int(sender_seq)
@@ -65,6 +69,7 @@ def receive_lsa(msg):
     copy_neighbors = json.dumps(node_neighbors)
     neigh_data = json.loads(copy_neighbors)
 
+    #forward received LSA to neighbors
     for n in neigh_data:
         data = neigh_data[n]
         
@@ -75,28 +80,27 @@ def receive_lsa(msg):
             s.sendto(msg.encode(), (server_address, server_port))
             s.close() #close port 
 
-    
+#receives incoming packets
 def client():
     # create socket
-    s.setblocking(0)
+    s.setblocking(0) #needed as s.recvfrom(BUFSIZE) blocks if there are no incoming packets
 
-    # main loop
     while threads_running:
         # accept a packet
-        
         try: 
             msg, addr = s.recvfrom(BUFSIZE)
             msg = msg.decode()
-
-            if "sendKA" in msg:
+        
+            if "sendKA" in msg: #receiving a keep alive
                 send_ack(msg)
-            elif "LSA" in msg:
+            elif "LSA" in msg: #receiving link state advetisement
                 receive_lsa(msg)
         except:
             pass
     s.close()
     return 
-            
+
+#checks last time a neighbor sent out keep alive to determine inactive nodes     
 def check_active_nodes():
     global seq_dict
     while threads_running:
@@ -109,12 +113,12 @@ def check_active_nodes():
                 node_neighbors[uuid]["active"] = False
                 node_neighbors[uuid]["time"] = None
 
-                #map logic 
                 with seq_dict_lock:
                     seq_dict[node_neighbors[uuid]["name"]] = 0
 
     return 
 
+#sends keep alive messages to immediate neighbors to find inactive nodes
 def keep_alive():
     while threads_running:
         copy_neighbors = json.dumps(node_neighbors)
@@ -136,10 +140,11 @@ def keep_alive():
         time.sleep(2) #adding 2 second delay before sending out next round of keep alives
     return 
 
-
+#returns uuid of current node
 def return_uuid():
     print({"uuid":node_info["uuid"]})
- 
+
+#adds neighbor to node's neighbors
 def add_neighbor(msg):
     _,iid, host, port, metric = msg.split()
     uuid = iid.split("=")[1]
@@ -156,6 +161,7 @@ def add_neighbor(msg):
         
     node_neighbors[uuid.strip()] = info
 
+#returns the active neighbors from the node's neighbors
 def return_neighbors():
     output = {"neighbors": dict()}
     copy_neighbors = json.dumps(node_neighbors)
@@ -169,6 +175,7 @@ def return_neighbors():
                                                 "metric": int(data["distance_metric"])}
     print(output)
 
+#grabs information from config file
 def set_configuration(config_file):
     file1 = open(config_file, "r")
     config_lines = file1.readlines()
@@ -192,17 +199,20 @@ def set_configuration(config_file):
 
                 node_neighbors[uuid.strip()] = info
 
+#sends out LSAs to neighbors
 def link_state_ad():
     while threads_running:
         copy_neighbors = json.dumps(node_neighbors)
         neigh_data = json.loads(copy_neighbors)
         
+        #go through neighbors and send out LSAs (current state of node's neighbors)
         for n in neigh_data:
             data = neigh_data[n]
             if data["active"]:
                 server_address = data["hostname"]
                 server_port = int(data["backend_port"])  
                 global seq
+
                 # create socket
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 msg = "LSA" + "|" + node_info["name"] + "|" + str(seq) + "|" + copy_neighbors
@@ -214,74 +224,116 @@ def link_state_ad():
         time.sleep(2)
     return 
 
+#returns the map of the graph based on LSAs
 def construct_map():
-    global inactive_nodes
-    new_graph = dict()
-    #go through nodes to current node
-    copy_neighbors = json.dumps(node_neighbors)
-    neigh_data = json.loads(copy_neighbors)
-    
-    initial_neighbors = dict()
-    for n in neigh_data:
-        data = neigh_data[n]
-        if data["active"]:
-            if data["name"] in inactive_nodes: inactive_nodes.remove(data["name"])
-            initial_neighbors[data["name"]] = int(data["distance_metric"])
-        else:
-             inactive_nodes.add(data["name"])
+    while threads_running:
+        global inactive_nodes
+        new_graph = dict()
+        copy_neighbors = json.dumps(node_neighbors)
+        neigh_data = json.loads(copy_neighbors)
+        
+        #add immediate neighbors to graph
+        initial_neighbors = dict()
+        for n in neigh_data:
+            data = neigh_data[n]
+            if data["active"]:
+                if data["name"] in inactive_nodes: inactive_nodes.remove(data["name"])
+                initial_neighbors[data["name"]] = int(data["distance_metric"])
+            else:
+                inactive_nodes.add(data["name"])
 
-    new_graph[node_info["name"]] = initial_neighbors
+        new_graph[node_info["name"]] = initial_neighbors
+        global stored_lsa
+        with lsa_lock:
+            #get inactive nodes
+            for n in stored_lsa:
+                if n not in inactive_nodes:
+                    neighbors = stored_lsa[n]
+                    for uuid in neighbors:
+                        if not neighbors[uuid]["active"]:
+                            inactive_nodes.add(neighbors[uuid]["name"])
+
+            #build the graph
+            for n in stored_lsa:
+                if n not in inactive_nodes:
+                    active_neighbors = dict()
+                    neighbors = stored_lsa[n]
+                    for uuid in neighbors:
+                        if neighbors[uuid]["active"]:
+                            if neighbors[uuid]["name"] in inactive_nodes: inactive_nodes.remove(neighbors[uuid]["name"])
+                            name = neighbors[uuid]["name"]
+                            metric = neighbors[uuid]["distance_metric"]
+                            active_neighbors[name] = int(metric)
+                        else:
+                            inactive_nodes.add(neighbors[uuid]["name"])
+
+                    new_graph[n] = active_neighbors
+
+        global graph
+        with graph_lock:
+            graph = new_graph
+        time.sleep(2)
+
+#returns the rank at current node
+def construct_rank():
+    #Dijkstra's Algorithm
+    root = node_info["name"]
+    dist_d = dict()
     global stored_lsa
     with lsa_lock:
         for n in stored_lsa:
-            if n not in inactive_nodes:
-                #active_neighbors = dict()
-                neighbors = stored_lsa[n]
-                for uuid in neighbors:
-                    if not neighbors[uuid]["active"]:
-                        inactive_nodes.add(neighbors[uuid]["name"])
+            dist_d[n] = float('inf')
+    dist_d[root] = 0
+    minHeap = [(dist_d[root],root)]
+    heapq.heapify(minHeap)
 
-        #print(inactive_nodes, "1")
-        for n in stored_lsa:
-            if n not in inactive_nodes:
-                active_neighbors = dict()
-                neighbors = stored_lsa[n]
-                for uuid in neighbors:
-                    if neighbors[uuid]["active"]:
-                        if neighbors[uuid]["name"] in inactive_nodes: inactive_nodes.remove(neighbors[uuid]["name"])
-                        name = neighbors[uuid]["name"]
-                        metric = neighbors[uuid]["distance_metric"]
-                        active_neighbors[name] = int(metric)
-                    else:
-                        inactive_nodes.add(neighbors[uuid]["name"])
+    seen = set()
+    global graph
+    with graph_lock:
+        while minHeap:
+            dist, curr = heapq.heappop(minHeap)
+            if curr not in seen:
+                for n in graph[curr]:
+                    if  dist_d[n] > dist + graph[curr][n]:
+                        dist_d[n] = dist + graph[curr][n]
+                        heapq.heappush(minHeap,(dist + graph[curr][n],n))
+                seen.add(curr)
 
-                new_graph[n] = active_neighbors
-        #print(inactive_nodes, "2")
-    
-    print({"map":new_graph})
+    ranking = dict()
+    for n in dist_d:
+        if n != root and dist_d[n] != float('inf'):
+            ranking[n] = dist_d[n]
+
+    print({"rank":ranking})
+
 
 
 if __name__ == '__main__':
     command = sys.argv[1]
-    config_file = sys.argv[2]
+    config_file = sys.argv[2] #get config file
     set_configuration(config_file)
 
-
+    #create socket for client
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     SERVER_PORT = int(node_info["backend_port"])
     s.bind(("localhost", SERVER_PORT))
 
-    keep_alive_messages = threading.Thread(target=keep_alive)
-    check_nodes = threading.Thread(target=check_active_nodes)
-    client_thread = threading.Thread(target=client)
-    link_state_thread = threading.Thread(target=link_state_ad)
-    threads = [client_thread, keep_alive_messages,check_nodes, link_state_thread]
+    #initialize threads for different functions that run continuously
+    keep_alive_messages = threading.Thread(target=keep_alive) #send keep alives
+    check_nodes = threading.Thread(target=check_active_nodes) #check for inactive nodes
+    client_thread = threading.Thread(target=client) #receives incoming messages
+    link_state_thread = threading.Thread(target=link_state_ad) #send link state advertisements
+    build_graph_thread  = threading.Thread(target=construct_map) #builds graph from LSA
+    threads = [client_thread, keep_alive_messages,check_nodes, link_state_thread,build_graph_thread]
     
     threads_running = True
     
+    #starts threads 
     for t in threads:
         t.start()
 
+    #gets input from the cmdline and calls
+    #relevant function
     while True:
         msg_string = input()
 
@@ -293,20 +345,13 @@ if __name__ == '__main__':
             add_neighbor(msg_string)
         elif msg_string == "kill":
             threads_running = False
+            #closes threads 
             for t in threads:
                 t.join()
             s.close()
             exit(0)
-        elif msg_string == "print_neighbour":
-            print(node_neighbors)
         elif "map" in msg_string:
-            construct_map()
-            # print({"map": dict()})
+            with graph_lock:
+                print({"map":graph})
         elif "rank" in msg_string:
-            print({"rank":dict()})
-        elif "sequence_info" in msg_string:
-            print(seq_dict)
-        elif "lsa" in msg_string:
-            print(stored_lsa)
-        elif "removed" in msg_string:
-            print(inactive_nodes)
+            construct_rank()
