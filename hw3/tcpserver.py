@@ -15,8 +15,9 @@ transmitted_packets = dict()
 port_to_hostname = dict()
 received_bytes = [0,[]] #will have to handle ordering at some point
 count = 0
+threads_running = False
+received_file = ""
 
-#packer = struct.Struct('HHLLHH1024c')
 
 def receive_handshake(src_port, dst_port, sequence_number, acknowledgement_number,data_length, syn, ack, data):
     syn, ack = 1,1
@@ -32,111 +33,115 @@ def receive_handshake(src_port, dst_port, sequence_number, acknowledgement_numbe
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.sendto(packed_data, (port_to_hostname[src_port], src_port))
     s.close() #close port
-    print("SENT HANDSHAKE2")
+    return 
 
 def send_ack(src_port, dst_port, sequence_number, acknowledgement_number,data_length, syn, ack, data):
     syn, ack = 0,1
     acknowledgement_number = sequence_number
     sequence_number = 0
     data = bytes(1024*" ", 'utf-8')
-    packed_data = struct.pack("HHLLHHH1024s", dst_port, src_port, sequence_number, acknowledgement_number,data_length, syn, ack, data)
 
+    packed_data = struct.pack("HHLLHHH1024s", dst_port, src_port, sequence_number, acknowledgement_number,data_length, syn, ack, data)
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.sendto(packed_data, (port_to_hostname[src_port], src_port))
     s.close() #close port
-    print("SENT HANDSHAKE 3")
+    return
 
 def send_data(src_port, dst_port, sequence_number, acknowledgement_number,data_length, syn, ack, data):
     if acknowledgement_number == transmitted_packets[src_port][0]:
         f = transmitted_packets[src_port][1]
         packet_bytes = f.read(1024)
-        if len(packet_bytes) < 1024:
-            print(len(packet_bytes))
-            print(packet_bytes)
-            print("REACHED THE END")
-            f.close()
-            #exit(0)
-        #print(packet_bytes)
+        # if len(packet_bytes) < 1024:
+        #     f.close()
+
         sequence_number += len(packet_bytes)
         transmitted_packets[src_port][0] = sequence_number
         acknowledgement_number = 0
         data_length = len(packet_bytes)
         syn, ack = 1,0
 
+        #build packet and send it 
         packed_data = struct.pack("HHLLHHH1024s", dst_port, src_port, sequence_number, acknowledgement_number,data_length, syn, ack, packet_bytes)
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.sendto(packed_data, (port_to_hostname[src_port], src_port))
         s.close() #close port
-        print("SENT DATA")
-
-        if data_length != 1024:
-            exit()
-
-
+    else:
+        pass #going to be used for retransmission
     return
 
 def build_file():
     file_bytes = bytes().join(received_bytes[1])
-    newFile = open("fake.jpg", "wb")
+    global received_file
+    #fake_filename = "1" + received_file
+    newFile = open(received_file, "wb")
     newFile.write(file_bytes)
     newFile.close()
 
-    return_bool = filecmp.cmp("fake.jpg", "Carnegie_Mellon_University.jpg", shallow=False)
-    print(return_bool)
+    #just checking if copied file is the same as original
+    #return_bool = filecmp.cmp(fake_filename, received_file, shallow=False)
+    #print(return_bool)
+    return
 
-    #AT THIS POINT WE WANT TO EMPTY EVERYTHING
 
+def print_received_packet(src_port, dst_port, sequence_number, acknowledgement_number, data_length, syn, ack, data):
+    print(type(data))
+    print("SRC PRT " + str(src_port))
+    print("DST PORT " + str(dst_port))
+    print("SEQ NUM " + str(sequence_number))
+    print("ACK NUMBER" + str(acknowledgement_number))
+    print("DATA LENGTH" + str(data_length))
+    print("SYN/ACK " + str(syn) + "/" + str(ack))
+    print("DATA " + str(data))
+    return 
 
+def send_fin(src_port, dst_port, sequence_number, acknowledgement_number,data_length, syn, ack, data):
+    syn, ack = 0,0 # 0 ACK & 0 SYN working as a FIN here
+    acknowledgement_number = sequence_number
+    sequence_number = 0
+    data = bytes(1024*" ", 'utf-8')
+
+    packed_data = struct.pack("HHLLHHH1024s", dst_port, src_port, sequence_number, acknowledgement_number,data_length, syn, ack, data)
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.sendto(packed_data, (port_to_hostname[src_port], src_port))
+    s.close() #close port
+    return
 
 def receive():
+    global received_bytes, threads_running
     while threads_running:
         packet, addr = s.recvfrom(2048)
         src_port, dst_port, sequence_number, acknowledgement_number, data_length, syn, ack, data = struct.unpack("HHLLHHH1024s",packet)
-        # print(type(data))
-        # #data = (data.decode()).strip()
-        # print("SRC PRT " + str(src_port))
-        # print("DST PORT " + str(dst_port))
-        # print("SEQ NUM " + str(sequence_number))
-        # print("ACK NUMBER" + str(acknowledgement_number))
-        # print("DATA LENGTH" + str(data_length))
-        # print("SYN/ACK " + str(syn) + "/" + str(ack))
-        # print("DATA " + str(data))
-
+        # print_received_packet(src_port, dst_port, sequence_number, acknowledgement_number, data_length, syn, ack, data)
+        
         if syn == 1 and ack == 0:
             if data_length > 0:
+                #complete packet sent (might not be the case for when we start doing windows and packet loss)
                 if data_length != 1024:
                     received_bytes[1].append(data[0:data_length])
                     build_file()
-                    # print(received_bytes[1])
-                    # print(len(received_bytes[1]), received_bytes[0])
-                    exit()
+                    received_bytes = [0,[]]  #empty out data from newly received file that has been created
+                    #send fin to server 
+                    send_fin(src_port, dst_port, sequence_number, acknowledgement_number,data_length, syn, ack, data)
                 else:
                     received_bytes[1].append(data)
                     #send ACK back to server to receive more packets
                     send_ack(src_port, dst_port, sequence_number, acknowledgement_number,data_length, syn, ack, data)
-                #print(received_bytes[1])
-                # global count 
-                # if count >= 10:
-                #     print(received_bytes[1][1])
-                #     exit(0)
-                # count += 1
-                print("RECEIVING DATA")
-                #exit()
             else:
+                #server receiving first part of handshake
                 data = (data.decode()).strip()
                 receive_handshake(src_port, dst_port, sequence_number, acknowledgement_number,data_length, syn, ack, data)
-            #differentiate
+        #client receiving second part of handshake
         elif syn == 1 and ack == 1:
-            #print("SEND NORMAL ACK")
             data = (data.decode()).strip()
-            received_bytes[0] = eval(data)
+            received_bytes[0] = eval(data) #the data is size of incoming file
             send_ack(src_port, dst_port, sequence_number, acknowledgement_number,data_length, syn, ack, data)
         elif syn == 0 and ack == 1:
             send_data(src_port, dst_port, sequence_number, acknowledgement_number,data_length, syn, ack, data)
-            print("SEND DATA")
-        
-        print()
-        
+        elif syn == 0 and ack == 0 and transmitted_packets[src_port][0] == acknowledgement_number:
+            transmitted_packets[src_port][1].close()
+            del transmitted_packets[src_port]
+    return
+
 def initialize_handshake(filename):
     src_port = node_info["port"]
     dst_port = peer_info[filename]["port"]
@@ -150,7 +155,7 @@ def initialize_handshake(filename):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.sendto(packed_data, (peer_info[filename]["hostname"], peer_info[filename]["port"]))
     s.close() #close port
-    print("SENT HANDSHAKE1")
+    #print("SENT HANDSHAKE1")
     return  
 
 
@@ -166,11 +171,12 @@ def read_configuaration(config_file):
 
     for info in data["peer_info"]:
         keys = info["content_info"]
+        port_to_hostname[info["port"]] = info["hostname"]
         for k in keys:
             peer_info[k] = dict()
             peer_info[k]["hostname"] = info["hostname"]
             peer_info[k]["port"] = info["port"]
-            port_to_hostname[peer_info[k]["port"]] = info["hostname"]
+            #port_to_hostname[peer_info[k]["port"]] = info["hostname"]
 
     return
 
@@ -182,6 +188,7 @@ if __name__ == '__main__':
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     SERVER_PORT = node_info["port"]
     HOST = node_info["hostname"]
+    #s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind((HOST, SERVER_PORT)) #need to close s
 
     receiver_thread = threading.Thread(target=receive)
@@ -189,16 +196,17 @@ if __name__ == '__main__':
 
     threads_running = True
     
-    #starts threads (REMEMBER TO CLOSE)
+    #starts threads (REMEMBER TO CLOSE) or make daemon threads
     for t in threads:
         t.start()
 
     while True:
         filename = input()
         if filename in peer_info:
-            
-            #begin 3-way handshake 
             initialize_handshake(filename)
-            #print(msg_string)
-            #break
+            received_file = filename
+        elif filename.strip() == "kill":
+            threads_running = False
+            for t in threads:
+                t.join()
     
