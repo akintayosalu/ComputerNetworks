@@ -1,19 +1,19 @@
 import struct 
 f = open("Carnegie_Mellon_University.jpg","rb")
 data = f.read()
-#print(data)
+print(data)
 
 seq1 = data[0:128]
 seq2 = data[128:256]
 
-l = [seq1, seq2]
-print(seq1)
-print()
-print(seq2)
+# l = [seq1, seq2]
+# print(seq1)
+# print()
+# print(seq2)
 
-concatenated_sequence = bytes().join(l)
-print()
-print(concatenated_sequence)
+# concatenated_sequence = bytes().join(l)
+# print()
+# print(concatenated_sequence)
 
 
 # # print(type(data))
