@@ -68,7 +68,7 @@ def send_data(src_port, dst_port, sequence_number, acknowledgement_number,data_l
             #check if window has been sent + acked already
             while transmitted_packets[src_port][2] in transmitted_packets[src_port][3]:
                 transmitted_packets[src_port][3].remove(transmitted_packets[src_port][2])
-                del transmitted_packets[src_port][4][end_index][transmitted_packets[src_port][2]]
+                del transmitted_packets[src_port][4][transmitted_packets[src_port][2]]
                 transmitted_packets[src_port][2] += 1024 #increase beginning of window 
 
         first_packet_index = (transmitted_packets[src_port][2] - 1024) - transmitted_packets[src_port][0] 
@@ -77,64 +77,43 @@ def send_data(src_port, dst_port, sequence_number, acknowledgement_number,data_l
     for i in range(window_size):
         start_index = first_packet_index + (1024*i)
         end_index = start_index + 1024
+        syn = end_index + transmitted_packets[src_port][0] 
 
         with packet_lock:
             if start_index >= transmitted_packets[src_port][5]:
-                break #no more packets in the file to be sent
-        
-        with packet_lock:
+                break #no more packets in the file to be sent        
+
             #not a sent packet AND not a sent + acked packet
-            if end_index not in transmitted_packets[src_port][4] and end_index not in transmitted_packets[src_port][3]: 
+            if syn not in transmitted_packets[src_port][4] and syn not in transmitted_packets[src_port][3]: 
+                # print("SENT " + str(i))
+                # print(start_index,end_index,transmitted_packets[src_port][5])
                 packet_bytes = transmitted_packets[src_port][1][start_index:end_index]
                 sequence_number = transmitted_packets[src_port][0] + end_index
-            acknowledgement_number = 0
-            data_length = len(packet_bytes)
-            syn, ack = 1,0
+                acknowledgement_number = 0
+                data_length = len(packet_bytes)
+                syn, ack = 1,0
 
-            #build packet and send it 
-            packed_data = struct.pack("HHLLHHH1024s", dst_port, src_port, sequence_number, acknowledgement_number,data_length, syn, ack, packet_bytes)
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.sendto(packed_data, (port_to_hostname[src_port], src_port))
-            s.close() #close port
-            
-            with packet_lock:
-                #for checking for timeout for packets
-                transmitted_packets[src_port][4][end_index] = time.time()
-
-    #     #check it is last packet
-
-    # if acknowledgement_number == transmitted_packets[src_port][0]:
-    #     f = transmitted_packets[src_port][1]
-    #     packet_bytes = f.read(1024)
-    #     # if len(packet_bytes) < 1024:
-    #     #     f.close()
-
-    #     sequence_number += len(packet_bytes)
-    #     transmitted_packets[src_port][0] = sequence_number
-    #     acknowledgement_number = 0
-    #     data_length = len(packet_bytes)
-    #     syn, ack = 1,0
-
-    #     #build packet and send it 
-    #     packed_data = struct.pack("HHLLHHH1024s", dst_port, src_port, sequence_number, acknowledgement_number,data_length, syn, ack, packet_bytes)
-    #     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    #     s.sendto(packed_data, (port_to_hostname[src_port], src_port))
-    #     s.close() #close port
-    # else:
-    #     pass #going to be used for retransmission
-    # return
+                #build packet and send it 
+                packed_data = struct.pack("HHLLHHH1024s", dst_port, src_port, sequence_number, acknowledgement_number,data_length, syn, ack, packet_bytes)
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.sendto(packed_data, (port_to_hostname[src_port], src_port))
+                s.close() #close port
+                    #for checking for timeout for packets
+                transmitted_packets[src_port][4][sequence_number] = time.time()
+        #time.sleep(0.0001)
 
 def build_file():
     file_bytes = bytes().join(received_bytes[1])
     global received_file
     #fake_filename = "1" + received_file
+    # num = random.randint(0, 2**32 - 1)
     newFile = open(received_file, "wb")
     newFile.write(file_bytes)
-    newFile.close()
+    newFile.close() 
 
-    #just checking if copied file is the same as original
-    #return_bool = filecmp.cmp(fake_filename, received_file, shallow=False)
-    #print(return_bool)
+    # # just checking if copied file is the same as original
+    # return_bool = filecmp.cmp("test" + str(num) + received_file, received_file, shallow=False)
+    # print(return_bool)
     return
 
 
@@ -166,18 +145,20 @@ def receive():
     while threads_running:
         packet, addr = s.recvfrom(2048)
         src_port, dst_port, sequence_number, acknowledgement_number, data_length, syn, ack, data = struct.unpack("HHLLHHH1024s",packet)
-        print_received_packet(src_port, dst_port, sequence_number, acknowledgement_number, data_length, syn, ack, data)
         
         if syn == 1 and ack == 0:
             if data_length > 0:
                 #complete packet sent (might not be the case for when we start doing windows and packet loss)
                 if data_length != 1024:
                     idx = (sequence_number - received_bytes[2] - data_length)//1024
+                    # print(idx, len(received_bytes[1]))
+                    # print_received_packet(src_port, dst_port, sequence_number, acknowledgement_number, data_length, syn, ack, data)
                     received_bytes[1][idx] = data[0:data_length]
                     build_file()
                     received_bytes = [0,[],0]  #empty out data from newly received file that has been created
                     #send fin to server 
                     send_fin(src_port, dst_port, sequence_number, acknowledgement_number,data_length, syn, ack, data)
+                    # print("SENT FIN")
                 else:
                     idx = (sequence_number - received_bytes[2] - data_length)//1024
                     received_bytes[1][idx]=(data)
@@ -197,8 +178,11 @@ def receive():
             send_ack(src_port, dst_port, sequence_number, acknowledgement_number,data_length, syn, ack, data)
         elif syn == 0 and ack == 1:
             send_data(src_port, dst_port, sequence_number, acknowledgement_number,data_length, syn, ack, data)
-        elif syn == 0 and ack == 0 and transmitted_packets[src_port][0] == acknowledgement_number:
+        elif syn == 0 and ack == 0:
+            # print("RECEIVE FIN")
             with packet_lock:
+                transmitted_packets[src_port][3].add(acknowledgement_number) #add to seen & acked
+                del transmitted_packets[src_port][4][acknowledgement_number]
                 transmitted_packets[src_port][6].close()
                 del transmitted_packets[src_port]
     return
@@ -216,7 +200,6 @@ def initialize_handshake(filename):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.sendto(packed_data, (peer_info[filename]["hostname"], peer_info[filename]["port"]))
     s.close() #close port
-    #print("SENT HANDSHAKE1")
     return  
 
 def resend_data():
@@ -226,33 +209,28 @@ def resend_data():
             ports = transmitted_packets.keys()
         for dest_port in ports:
             with packet_lock:
-                syns = transmitted_packets[dest_port][4]
-            for syn in syns:
-                with packet_lock:
-                    if syn not in transmitted_packets[dest_port][3]:
-                        timeout = transmitted_packets[dest_port][3][syn] - time.time()
-                    if timeout > 0.02: #packet was lost so resend
-                        actual_index = syn - transmitted_packets[dest_port][0]
-                        packet_bytes = transmitted_packets[dest_port][1][actual_index-1024:actual_index]
-                        sequence_number = syn
-                        acknowledgement_number = 0
-                        data_length = len(packet_bytes)
-                        syn, ack = 1,0
+                syns = transmitted_packets[dest_port][4].keys()
+                for seq_num in syns:
+                    #with packet_lock:
+                    if seq_num not in transmitted_packets[dest_port][3]:
+                        timeout = time.time() - transmitted_packets[dest_port][4][seq_num]
+                        if timeout > 0.01: #packet was lost so resend
+                            actual_index = seq_num - transmitted_packets[dest_port][0]
+                            packet_bytes = transmitted_packets[dest_port][1][actual_index-1024:actual_index]
+                            sequence_number = seq_num
+                            acknowledgement_number = 0
+                            data_length = len(packet_bytes)
+                            syn, ack = 1,0
 
-                        #build packet and send it 
-                        packed_data = struct.pack("HHLLHHH1024s", node_info["port"], dest_port, sequence_number, acknowledgement_number,data_length, syn, ack, packet_bytes)
-                        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                        s.sendto(packed_data, (port_to_hostname[dest_port], dest_port))
-                        s.close() #close port
+                            #build packet and send it 
+                            packed_data = struct.pack("HHLLHHH1024s", node_info["port"], dest_port, sequence_number, acknowledgement_number,data_length, syn, ack, packet_bytes)
+                            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                            s.sendto(packed_data, (port_to_hostname[dest_port], dest_port))
+                            s.close() #close port
 
-                        #for checking for timeout for packets
-                        with packet_lock:
-                            transmitted_packets[dest_port][4][syn] = time.time()
-                        print("HAD TO RESEND")
-
+                            #for checking for timeout for packets
+                            transmitted_packets[dest_port][4][seq_num] = time.time()
         time.sleep(0.1)
-
-                    
 
 def read_configuaration(config_file):
     f = open(config_file)
@@ -271,7 +249,6 @@ def read_configuaration(config_file):
             peer_info[k] = dict()
             peer_info[k]["hostname"] = info["hostname"]
             peer_info[k]["port"] = info["port"]
-            #port_to_hostname[peer_info[k]["port"]] = info["hostname"]
 
     return
 
