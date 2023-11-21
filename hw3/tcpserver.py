@@ -105,7 +105,7 @@ def send_data(src_port, dst_port, sequence_number, acknowledgement_number,data_l
                 s.close() #close port
                     #for checking for timeout for packets
                 transmitted_packets[src_port][4][sequence_number] = time.time()
-        time.sleep(0.01)
+        time.sleep(0.001)
 
 def build_file():
     file_bytes = bytes().join(received_bytes[1])
@@ -215,7 +215,7 @@ def resend_data():
                 with packet_lock:
                     if syn not in transmitted_packets[dest_port][3]:
                         timeout = time.time() - transmitted_packets[dest_port][4][syn]
-                        if timeout > 0.1: #packet was lost so resend
+                        if timeout > 0.01: #packet was lost so resend
                             actual_index = syn - transmitted_packets[dest_port][0]
                             packet_bytes = transmitted_packets[dest_port][1][actual_index-1024:actual_index]
                             sequence_number = syn
