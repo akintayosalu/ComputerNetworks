@@ -68,13 +68,6 @@ check_exists_bool = os.path.exists(execution_dir_2+FILENAME) \
 					& os.path.exists(execution_dir_5+FILENAME) \
 					& os.path.exists(execution_dir_6+FILENAME)
 
-print("FAILS HERE " + str(check_exists_bool))
-print(os.path.exists(execution_dir_2+FILENAME))
-print(os.path.exists(execution_dir_3+FILENAME))
-print(os.path.exists(execution_dir_4+FILENAME))
-print(os.path.exists(execution_dir_5+FILENAME))
-print(os.path.exists(execution_dir_6+FILENAME))
-
 if check_exists_bool:
 	return_bool = filecmp.cmp(execution_dir_1+FILENAME, execution_dir_2+FILENAME, shallow=False) \
 				& filecmp.cmp(execution_dir_1+FILENAME, execution_dir_3+FILENAME, shallow=False) \
