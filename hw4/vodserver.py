@@ -4,11 +4,10 @@ import os
 import threading 
 from datetime import datetime, timezone
 
-threads_running = False
 SERVER_HOST = '' # Symbolic name, meaning all available interfaces
-s = None
-BUFSIZE = 2048
-CHUNKSIZE = 5242880
+s = None 
+BUFSIZE = 2048 
+CHUNKSIZE = 5242880 #maximum bytes of data to send in each packet
 file_types = {
     ".txt": "text/plain",
     ".css": "text/css",
@@ -108,22 +107,26 @@ margin-top:15%;
 </html>
 """
 
+#helper to get current date in specific format
 def get_date():
     current_utc_time = datetime.now(timezone.utc)
     timestamp = current_utc_time.strftime('%a, %d %b %Y %H:%M:%S GMT')
     return timestamp
 
+#helper to get last time a file was modified
 def get_modified_date(path):
     create_time = os.path.getctime(path)
     create_date_gmt = datetime.utcfromtimestamp(create_time)
     timestamp = create_date_gmt.strftime('%a, %d %b %Y %H:%M:%S GMT')
     return timestamp
 
+#helper to get the file extension of the requested file 
 def get_content_type(path):
     file_type = os.path.splitext(path)[1].lower()
     type_name = file_types.get(file_type,"application/octet-stream")
     return type_name
 
+#helper to send packets in 200 instance 
 def send_200(file_bytes, path,connection_socket):
     response_code = "HTTP/1.1 200 OK\n"
     accept_ranges = "Accept-Ranges: bytes\n"
@@ -138,6 +141,7 @@ def send_200(file_bytes, path,connection_socket):
     connection_socket.send(message_bytes)
     return 
 
+#helper to send packets with partial bytes in 206 instance 
 def send_206(start,end,file_bytes,path,connection_socket):
     response_code = "HTTP/1.1 206 Partial Content\n"
     accept_ranges = "Accept-Ranges: bytes\n"
@@ -154,6 +158,7 @@ def send_206(start,end,file_bytes,path,connection_socket):
     connection_socket.send(message_bytes)
     return 
 
+#helper to send 403 errors
 def send_403(connection_socket):
     response_code = "HTTP/1.1 403 Forbidden\n"
     date_info = "Date: " + get_date() + "\n"
@@ -164,6 +169,7 @@ def send_403(connection_socket):
     connection_socket.send(message_bytes)
     return 
 
+#helper to send 404 errors
 def send_404(connection_socket):
     response_code = "HTTP/1.1 404 Not Found\n"
     date_info = "Date: " + get_date() + "\n"
@@ -174,32 +180,34 @@ def send_404(connection_socket):
     connection_socket.send(message_bytes)
     return 
 
+#checks if a file exists
 def not_existing(request_file):
     path = "content" + request_file
     return not os.path.isfile(path)
 
+#checks if a file is confidential (cannot be sent to client)
 def is_confidential(request_file):
     directories = request_file.split("/")
     return "confidential" in directories
 
+#parses http request and sends response
 def parse_request(request, connection_socket):
     request_file = ""
     start, end = None, None
+    #parse the http client request 
     for lines in request.splitlines():
         if lines[0:3] == "GET":
-            filename = lines.split(" ")[1]
+            filename = lines.split(" ")[1] #getting file name from request
             request_file = filename
         elif lines[0:5] == "Range":
             range_info = lines.split(":")[1]
-            ranges = range_info.split("=")[1].split("-")
+            ranges = range_info.split("=")[1].split("-") #get range if applicable
             start = int(ranges[0])
-            if ranges[1] != "":
-                end = int(ranges[1])
     
     if (is_confidential(request_file)):
-        send_403(connection_socket) 
+        send_403(connection_socket) #file is forbidden
     elif (not_existing(request_file)):
-        send_404(connection_socket) 
+        send_404(connection_socket) #file does not exist on server
     else:
         path = "content" + request_file
         f = open(path, "rb")
@@ -210,8 +218,9 @@ def parse_request(request, connection_socket):
             #regular 200 response
             send_200(file_bytes,path,connection_socket)
         else:
+            #206 response (PARTIAL CONTENT)
             if start == None: start = 0
-            if end == None: end = size-1
+            end = min(start + CHUNKSIZE-1, size-1)
             send_206(start,end,file_bytes,path,connection_socket)
     return 
 
@@ -219,10 +228,9 @@ def server():
     while True:
         # accept a connection
         connection_socket, client_address = s.accept()
-
         # receive the message
         http_request = connection_socket.recv(BUFSIZE).decode()
-        #print(http_request)
+        # print(http_request)
         response_thread = threading.Thread(target=parse_request, args=(http_request, connection_socket), daemon=True)
         response_thread.start()
         
@@ -238,15 +246,5 @@ if __name__ == '__main__':
     # listen on socket
     s.listen(30)
 
-    # server_thread = threading.Thread(target=server, daemon=True)
-    # threads = [server_thread]
-    # threads_running = True
-    # for t in threads:
-    #     t.start()
-
     server()
-
-    # while True:
-    #     continue
-
 
